@@ -9,7 +9,7 @@ near-sdk = "3.1.0"
 near-sdk-sim = "3.1.1"
 
 # remember to include a line for each contract
-fungible-token = { path = "./ft" }
+fungible-token = { path = "synchro-token" }
 defi = { path = "./test-contract-defi" }
 
 [profile.release]
@@ -24,6 +24,6 @@ overflow-checks = true
 [workspace]
 # remember to include a member for each contract
 members = [
-  "ft",
+  "synchro-token",
   "test-contract-defi",
 ]

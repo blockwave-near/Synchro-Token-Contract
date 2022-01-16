@@ -13,7 +13,7 @@ near_sdk_sim::lazy_static_include::lazy_static_include_bytes! {
     DEFI_WASM_BYTES => "res/defi.wasm",
 }
 
-const FT_ID: &str = "ft";
+const FT_ID: &str = "synchro-token";
 const DEFI_ID: &str = "defi";
 
 // Register the given `user` with FT contract
