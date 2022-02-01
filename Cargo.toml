@@ -1,5 +1,5 @@
 [package]
-name = "fungible-token-wrapper"
+name = "synchro-token-contracts"
 version = "0.0.1"
 authors = ["Near Inc <hello@near.org>"]
 edition = "2018"
@@ -11,6 +11,7 @@ near-sdk-sim = "3.1.1"
 # remember to include a line for each contract
 fungible-token = { path = "synchro-token" }
 defi = { path = "./test-contract-defi" }
+gov = { path = "./gov-contract" }
 
 [profile.release]
 codegen-units = 1
@@ -26,4 +27,6 @@ overflow-checks = true
 members = [
   "synchro-token",
   "test-contract-defi",
+  "gov-contract",
+  "stake-pool",
 ]

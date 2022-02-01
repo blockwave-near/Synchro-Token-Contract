@@ -3,9 +3,13 @@ use near_contract_standards::fungible_token::metadata::{
 };
 use near_contract_standards::fungible_token::FungibleToken;
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
-use near_sdk::collections::LazyOption;
 use near_sdk::json_types::{ValidAccountId, U128};
 use near_sdk::{env, log, near_bindgen, AccountId, Balance, PanicOnDefault, PromiseOrValue};
+
+mod action;
+mod legacy_storage;
+mod storage_impl;
+mod owner;
 
 near_sdk::setup_alloc!();
 
@@ -18,14 +22,11 @@ pub struct Contract {
 #[near_bindgen]
 impl Contract {
     #[init]
-    pub fn new(
-        owner: ValidAccountId,
-        total_supply: U128
-    ) -> Self {
+    pub fn new(owner: ValidAccountId, total_supply: U128) -> Self {
         assert!(!env::state_exists(), "Already initialized");
         let mut contract = Self {
             ft: FungibleToken::new(b"a".to_vec()),
-        }; // a 라는 형태로 토큰 공급
+        };
         contract.ft.internal_register_account(owner.as_ref());
         contract.ft.internal_deposit(owner_id.as_ref(), total_supply.into());
         log!("Deposit {} token to {}", total_supply.into(), owner);
@@ -61,7 +62,7 @@ mod tests {
 
     use super::*;
 
-    const TOTAL_SUPPLY: Balance = 1_000_000_000_000_000;
+    const TOTAL_SUPPLY: Balance = 1_000_000_000_000_000_000_000_000;
 
     fn get_context(predecessor_account_id: ValidAccountId) -> VMContextBuilder {
         let mut builder = VMContextBuilder::new();

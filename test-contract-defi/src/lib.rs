@@ -30,9 +30,9 @@ pub trait ValueReturnTrait {
 }
 
 // Have to repeat the same trait for our own implementation.
-trait ValueReturnTrait {
-    fn value_please(&self, amount_to_return: String) -> PromiseOrValue<U128>;
-}
+// trait ValueReturnTrait {
+//     fn value_please(&self, amount_to_return: String) -> PromiseOrValue<U128>;
+// }
 
 #[near_bindgen]
 impl DeFi {
