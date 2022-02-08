@@ -1,11 +1,11 @@
-mod action;
 mod view;
 mod token_receiver;
 mod internal;
 mod utils;
+mod owner;
 
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
-use near_sdk::json_types::{U128, U64};
+use near_sdk::json_types::{U128, U64, WrappedTimestamp};
 use near_sdk::{env, near_bindgen, AccountId, Balance, EpochHeight};
 use std::collections::HashMap;
 
@@ -14,6 +14,7 @@ static ALLOC: near_sdk::wee_alloc::WeeAlloc = near_sdk::wee_alloc::WeeAlloc::INI
 
 #[derive(BorshDeserialize, BorshSerialize, Debug, PartialEq)]
 pub struct AccountInfo {
+    id: AccountId,
     vote: bool,
     amount: Balance,
 }
@@ -25,6 +26,9 @@ pub struct VotingContract {
     polls: Vec<Poll>,
     poll_count: u32,
     pause: bool,
+    market_id: AccountId,
+    token_id: AccountId,
+    min_create_poll_amount: Balance,
 }
 
 #[near_bindgen]
@@ -33,6 +37,7 @@ pub struct VotingContract {
 pub struct Poll {
     creator_id: AccountId,
     status: PollStatus,
+    create_date: Option<WrappedTimestamp>,
     title: String,
     description: String,
     deposit_amount: Balance,
@@ -53,14 +58,41 @@ impl Default for VotingContract {
 #[near_bindgen]
 impl VotingContract {
     #[init]
-    pub fn new() -> Self {
+    pub fn new(token_id:AccountId, market_id: AccountId, min_create_poll_amount: Balance) -> Self {
         assert!(!env::state_exists(), "The contract is already initialized");
         VotingContract {
             owner: env::predecessor_account_id(),
             polls: Vec::new(),
             poll_count: 0,
             pause: false,
+            market_id,
+            token_id,
+            min_create_poll_amount,
         }
+    }
+
+    // claim user
+    pub fn claim(&self, index: u32) {
+        self.assert_market();
+        self.assert_contract_running();
+        self.assert_index(index);
+        self.check_status(index);
+
+        let mut cur_poll: Poll = self.polls[index];
+        let votes = std::mem::take(&mut cur_poll.votes);
+        if votes.contains_key(&env::predecessor_account_id()) {
+            let amount =
+        } else {
+            env::panic(b"ERR: non-whitelisted token can NOT deposit into lost-found.");
+        };
+    }
+
+    pub fn stop_vote(&mut self, index: u32) {
+        self.assert_owner();
+
+        let mut cur_poll: Poll = self.polls[index];
+        cur_poll.status = PollStatus::Expired;
+        self.polls.insert(index.into(), cur_poll);
     }
 }
 
