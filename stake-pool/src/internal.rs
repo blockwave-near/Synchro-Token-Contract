@@ -1,30 +1,13 @@
-use crate::*;
 
 impl StakingContract {
     /********************/
-    /* Internal methods */
+    /* Received methods */
     /********************/
 
-    /// Restakes the current `total_staked_balance` again.
-    pub(crate) fn internal_restake(&mut self) {
-        if self.paused {
-            return;
-        }
-        // Stakes with the staking public key. If the public key is invalid the entire function
-        // call will be rolled back.
-        Promise::new(env::current_account_id())
-            .stake(self.total_staked_balance, self.stake_public_key.clone())
-            .then(ext_self::on_stake_action(
-                &env::current_account_id(),
-                NO_DEPOSIT,
-                ON_STAKE_ACTION_GAS,
-            ));
-    }
+    pub(crate) fn internal_deposit(&mut self, account_id: &AccountId, amount: Balance) -> u128 {
+        self.internal_ping();
 
-    pub(crate) fn internal_deposit(&mut self) -> u128 {
-        let account_id = env::predecessor_account_id();
         let mut account = self.internal_get_account(&account_id);
-        let amount = env::attached_deposit();
         account.unstaked += amount;
         self.internal_save_account(&account_id, &account);
         self.last_total_balance += amount;
@@ -34,17 +17,31 @@ impl StakingContract {
                 "@{} deposited {}. New unstaked balance is {}",
                 account_id, amount, account.unstaked
             )
-            .as_bytes(),
+                .as_bytes(),
         );
         amount
     }
+
+    pub(crate) fn internal_deposit_and_stake(&mut self, account_id: &AccountId, amount: Balance) -> u128 {
+        self.internal_ping();
+
+        let deposit_amount = self.internal_deposit(account_id, amount);
+        self.internal_stake(deposit_amount);
+    }
+
+    /********************/
+    /* Internal methods */
+    /********************/
 
     pub(crate) fn internal_withdraw(&mut self, amount: Balance) {
         assert!(amount > 0, "Withdrawal amount should be positive");
 
         let account_id = env::predecessor_account_id();
         let mut account = self.internal_get_account(&account_id);
-        assert!(account.unstaked >= amount, "Not enough unstaked balance to withdraw");
+        assert!(
+            account.unstaked >= amount,
+            "Not enough unstaked balance to withdraw"
+        );
         assert!(
             account.unstaked_available_epoch_height <= env::epoch_height(),
             "The unstaked balance is not yet available due to unstaking delay"
@@ -57,10 +54,10 @@ impl StakingContract {
                 "@{} withdrawing {}. New unstaked balance is {}",
                 account_id, amount, account.unstaked
             )
-            .as_bytes(),
+                .as_bytes(),
         );
 
-        Promise::new(account_id).transfer(amount);
+        Promise::new(account_id).transfer(amount); // TODO: 토큰 전송
         self.last_total_balance -= amount;
     }
 
@@ -68,7 +65,7 @@ impl StakingContract {
         assert!(amount > 0, "Staking amount should be positive");
 
         let account_id = env::predecessor_account_id();
-        let mut account = self.internal_get_account(&account_id);
+        let account = self.internal_get_account(&account_id);
 
         // Calculate the number of "stake" shares that the account will receive for staking the
         // given amount.
@@ -86,42 +83,39 @@ impl StakingContract {
             "Invariant violation. Calculated staked amount must be positive, because \"stake\" share price should be at least 1"
         );
 
-        assert!(account.unstaked >= charge_amount, "Not enough unstaked balance to stake");
-        account.unstaked -= charge_amount;
-        account.stake_shares += num_shares;
-        self.internal_save_account(&account_id, &account);
-
-        // The staked amount that will be added to the total to guarantee the "stake" share price
-        // never decreases. The difference between `stake_amount` and `charge_amount` is paid
-        // from the allocated STAKE_SHARE_PRICE_GUARANTEE_FUND.
-        let stake_amount = self.staked_amount_from_num_shares_rounded_up(num_shares);
-
-        self.total_staked_balance += stake_amount;
-        self.total_stake_shares += num_shares;
-
-        env::log(
-            format!(
-                "@{} staking {}. Received {} new staking shares. Total {} unstaked balance and {} staking shares",
-                account_id, charge_amount, num_shares, account.unstaked, account.stake_shares
-            )
-                .as_bytes(),
+        assert!(
+            account.unstaked >= charge_amount,
+            "Not enough unstaked balance to stake"
         );
-        env::log(
-            format!(
-                "Contract total staked balance is {}. Total number of shares {}",
-                self.total_staked_balance, self.total_stake_shares
-            )
-            .as_bytes(),
-        );
+
+        // Mint bNear to caller.
+        // Stake occurs only when minting action is successful.
+        ext_fungible_token::mint(
+            account_id.clone(),
+            charge_amount,
+            &self.token_contract,
+            NO_DEPOSIT,
+            MINT_AND_BURN_GAS,
+        ).then(ext_self::on_mint_action(
+            account_id,
+            charge_amount,
+            num_shares,
+            &env::current_account_id(),
+            NO_DEPOSIT,
+            ON_MINT_AND_BURN_ACTION_GAS,
+        ));
     }
 
-    pub(crate) fn inner_unstake(&mut self, amount: u128) {
+    pub(crate) fn inner_unstake(&mut self, amount: Balance) {
         assert!(amount > 0, "Unstaking amount should be positive");
 
         let account_id = env::predecessor_account_id();
         let mut account = self.internal_get_account(&account_id);
 
-        assert!(self.total_staked_balance > 0, "The contract doesn't have staked balance");
+        assert!(
+            self.total_staked_balance > 0,
+            "The contract doesn't have staked balance"
+        );
         // Calculate the number of shares required to unstake the given amount.
         // NOTE: The number of shares the account will pay is rounded up.
         let num_shares = self.num_shares_from_staked_amount_rounded_up(amount);
@@ -129,7 +123,10 @@ impl StakingContract {
             num_shares > 0,
             "Invariant violation. The calculated number of \"stake\" shares for unstaking should be positive"
         );
-        assert!(account.stake_shares >= num_shares, "Not enough staked balance to unstake");
+        assert!(
+            account.stake_shares >= num_shares,
+            "Not enough staked balance to unstake"
+        );
 
         // Calculating the amount of tokens the account will receive by unstaking the corresponding
         // number of "stake" shares, rounding up.
@@ -139,38 +136,67 @@ impl StakingContract {
             "Invariant violation. Calculated staked amount must be positive, because \"stake\" share price should be at least 1"
         );
 
-        account.stake_shares -= num_shares;
-        account.unstaked += receive_amount;
-        account.unstaked_available_epoch_height = env::epoch_height() + NUM_EPOCHS_TO_UNLOCK;
-        self.internal_save_account(&account_id, &account);
+        // Reduce stake reward first, then reduce stake principal.
+        let stake_reward: Balance = self.internal_get_stake_reward(&account_id);
 
-        // The amount tokens that will be unstaked from the total to guarantee the "stake" share
-        // price never decreases. The difference between `receive_amount` and `unstake_amount` is
-        // paid from the allocated STAKE_SHARE_PRICE_GUARANTEE_FUND.
-        let unstake_amount = self.staked_amount_from_num_shares_rounded_down(num_shares);
+        if stake_reward >= receive_amount {
+            account.stake_shares -= num_shares;
+            account.unstaked += receive_amount;
+            account.unstaked_available_epoch_height = env::epoch_height() + NUM_EPOCHS_TO_UNLOCK;
 
-        self.total_staked_balance -= unstake_amount;
-        self.total_stake_shares -= num_shares;
+            self.internal_save_account(&account_id, &account);
 
-        env::log(
-            format!(
-                "@{} unstaking {}. Spent {} staking shares. Total {} unstaked balance and {} staking shares",
-                account_id, receive_amount, num_shares, account.unstaked, account.stake_shares
-            )
-                .as_bytes(),
-        );
-        env::log(
-            format!(
-                "Contract total staked balance is {}. Total number of shares {}",
-                self.total_staked_balance, self.total_stake_shares
-            )
-            .as_bytes(),
-        );
+            // The amount tokens that will be unstaked from the total to guarantee the "stake" share
+            // price never decreases. The difference between `receive_amount` and `unstake_amount` is
+            // paid from the allocated STAKE_SHARE_PRICE_GUARANTEE_FUND.
+            let unstake_amount = self.staked_amount_from_num_shares_rounded_down(num_shares);
+
+            self.total_staked_balance -= unstake_amount;
+            self.total_stake_shares -= num_shares;
+
+            env::log(
+                format!(
+                    "@{} unstaking {}. Spent {} staking shares. Total {} unstaked balance and {} staking shares",
+                    account_id, receive_amount, num_shares, account.unstaked, account.stake_shares
+                )
+                    .as_bytes(),
+            );
+            env::log(
+                format!(
+                    "Contract total staked balance is {}. Total number of shares {}",
+                    self.total_staked_balance, self.total_stake_shares
+                )
+                    .as_bytes(),
+            );
+        } else {
+            let principal_reduced: Balance = receive_amount - stake_reward;
+            // The amount to burn bNEAR is same as the reduced staked principal.
+            // Unstake occurs only when burning action is successful.
+            ext_fungible_token::burn(
+                account_id.clone(),
+                principal_reduced,
+                &self.token_contract,
+                NO_DEPOSIT,
+                MINT_AND_BURN_GAS,
+            ).then(ext_self::on_burn_action(
+                account_id,
+                num_shares,
+                receive_amount,
+                principal_reduced,
+                &env::current_account_id(),
+                NO_DEPOSIT,
+                ON_MINT_AND_BURN_ACTION_GAS
+            ));
+        }
     }
 
     /// Asserts that the method was called by the owner.
     pub(crate) fn assert_owner(&self) {
-        assert_eq!(env::predecessor_account_id(), self.owner_id, "Can only be called by the owner");
+        assert_eq!(
+            env::predecessor_account_id(),
+            self.owner_id,
+            "Can only be called by the owner"
+        );
     }
 
     /// Distributes rewards after the new epoch. It's automatically called before every action.
@@ -181,55 +207,6 @@ impl StakingContract {
             return false;
         }
         self.last_epoch_height = epoch_height;
-
-        // New total amount (both locked and unlocked balances).
-        // NOTE: We need to subtract `attached_deposit` in case `ping` called from `deposit` call
-        // since the attached deposit gets included in the `account_balance`, and we have not
-        // accounted it yet.
-        let total_balance =
-            env::account_locked_balance() + env::account_balance() - env::attached_deposit();
-
-        assert!(
-            total_balance >= self.last_total_balance,
-            "The new total balance should not be less than the old total balance"
-        );
-        let total_reward = total_balance - self.last_total_balance;
-        if total_reward > 0 {
-            // The validation fee that the contract owner takes.
-            let owners_fee = self.reward_fee_fraction.multiply(total_reward);
-
-            // Distributing the remaining reward to the delegators first.
-            let remaining_reward = total_reward - owners_fee;
-            self.total_staked_balance += remaining_reward;
-
-            // Now buying "stake" shares for the contract owner at the new share price.
-            let num_shares = self.num_shares_from_staked_amount_rounded_down(owners_fee);
-            if num_shares > 0 {
-                // Updating owner's inner account
-                let owner_id = self.owner_id.clone();
-                let mut account = self.internal_get_account(&owner_id);
-                account.stake_shares += num_shares;
-                self.internal_save_account(&owner_id, &account);
-                // Increasing the total amount of "stake" shares.
-                self.total_stake_shares += num_shares;
-            }
-            // Increasing the total staked balance by the owners fee, no matter whether the owner
-            // received any shares or not.
-            self.total_staked_balance += owners_fee;
-
-            env::log(
-                format!(
-                    "Epoch {}: Contract received total rewards of {} tokens. New total staked balance is {}. Total number of shares {}",
-                    epoch_height, total_reward, self.total_staked_balance, self.total_stake_shares,
-                )
-                    .as_bytes(),
-            );
-            if num_shares > 0 {
-                env::log(format!("Total rewards fee is {} stake shares.", num_shares).as_bytes());
-            }
-        }
-
-        self.last_total_balance = total_balance;
         true
     }
 
@@ -246,10 +223,13 @@ impl StakingContract {
         &self,
         amount: Balance,
     ) -> NumStakeShares {
-        assert!(self.total_staked_balance > 0, "The total staked balance can't be 0");
+        assert!(
+            self.total_staked_balance > 0,
+            "The total staked balance can't be 0"
+        );
         (U256::from(self.total_stake_shares) * U256::from(amount)
             / U256::from(self.total_staked_balance))
-        .as_u128()
+            .as_u128()
     }
 
     /// Returns the number of "stake" shares rounded up corresponding to the given staked balance
@@ -260,11 +240,14 @@ impl StakingContract {
         &self,
         amount: Balance,
     ) -> NumStakeShares {
-        assert!(self.total_staked_balance > 0, "The total staked balance can't be 0");
+        assert!(
+            self.total_staked_balance > 0,
+            "The total staked balance can't be 0"
+        );
         ((U256::from(self.total_stake_shares) * U256::from(amount)
             + U256::from(self.total_staked_balance - 1))
             / U256::from(self.total_staked_balance))
-        .as_u128()
+            .as_u128()
     }
 
     /// Returns the staked amount rounded down corresponding to the given number of "stake" shares.
@@ -272,10 +255,13 @@ impl StakingContract {
         &self,
         num_shares: NumStakeShares,
     ) -> Balance {
-        assert!(self.total_stake_shares > 0, "The total number of stake shares can't be 0");
+        assert!(
+            self.total_stake_shares > 0,
+            "The total number of stake shares can't be 0"
+        );
         (U256::from(self.total_staked_balance) * U256::from(num_shares)
             / U256::from(self.total_stake_shares))
-        .as_u128()
+            .as_u128()
     }
 
     /// Returns the staked amount rounded up corresponding to the given number of "stake" shares.
@@ -285,16 +271,26 @@ impl StakingContract {
         &self,
         num_shares: NumStakeShares,
     ) -> Balance {
-        assert!(self.total_stake_shares > 0, "The total number of stake shares can't be 0");
+        assert!(
+            self.total_stake_shares > 0,
+            "The total number of stake shares can't be 0"
+        );
         ((U256::from(self.total_staked_balance) * U256::from(num_shares)
             + U256::from(self.total_stake_shares - 1))
             / U256::from(self.total_stake_shares))
-        .as_u128()
+            .as_u128()
     }
 
     /// Inner method to get the given account or a new default value account.
     pub(crate) fn internal_get_account(&self, account_id: &AccountId) -> Account {
         self.accounts.get(account_id).unwrap_or_default()
+    }
+
+    pub(crate) fn internal_get_stake_reward(&self, account_id: &AccountId) -> Balance {
+        let account = self.internal_get_account(account_id);
+        let staked_balance: Balance = self.staked_amount_from_num_shares_rounded_down(account.stake_shares);
+
+        staked_balance - account.stake_principal
     }
 
     /// Inner method to save the given account for a given account ID.
@@ -307,3 +303,5 @@ impl StakingContract {
         }
     }
 }
+
+use crate::*;

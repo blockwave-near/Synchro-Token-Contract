@@ -73,15 +73,15 @@ impl VotingContract {
 
     // claim user
     pub fn claim(&self, index: u32) {
-        self.assert_market();
         self.assert_contract_running();
         self.assert_index(index);
         self.check_status(index);
 
+        let account_id = env::predecessor_account_id();
         let mut cur_poll: Poll = self.polls[index];
         let votes = std::mem::take(&mut cur_poll.votes);
         if votes.contains_key(&env::predecessor_account_id()) {
-            let amount =
+            let amount = votes.get(&account_id).unwrap_or_else(|| { return U128(0) });
         } else {
             env::panic(b"ERR: non-whitelisted token can NOT deposit into lost-found.");
         };

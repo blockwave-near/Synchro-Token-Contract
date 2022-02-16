@@ -12,12 +12,11 @@ pub const VIRTUAL_ACC: &str = "@";
 #[serde(crate = "near_sdk::serde")]
 #[serde(untagged)]
 pub enum UserAction {
-    CreatePoll{title: String, description: String},
-    Vote{index: u32, vote: bool},
+    DepositAndStake,
 }
 
 #[near_bindgen]
-impl FungibleTokenReceiver for VotingContract {
+impl FungibleTokenReceiver for StakingContract {
     /// Callback on receiving tokens by this contract.
     /// `msg` format is either "" for deposit or `TokenReceiverMessage`.
     #[allow(unreachable_code)]
@@ -27,31 +26,19 @@ impl FungibleTokenReceiver for VotingContract {
         amount: U128,
         msg: String,
     ) -> PromiseOrValue<U128> {
-        self.assert_contract_running();
-        let token_in = env::predecessor_account_id();
         if msg.is_empty() {
-            env::panic(b"ERR_JSON_IS_EMPTY");
+            // Simple deposit.
+            self.internal_deposit(sender_id.as_ref(), amount.into());
+            PromiseOrValue::Value(U128(0))
         } else {
             let message =
                 serde_json::from_str::<UserAction>(&msg).expect("ERR_JSON_IS_EMPTY");
             match message {
-                UserAction::CreatePoll {
-                    title,
-                    description,
-                } => {
-                    self.internal_create_poll(title, description, amount.into(), sender_id.to_string());
+                UserAction::DepositAndStake => {
+                    self.internal_deposit_and_stake(sender_id.as_ref(), amount.into());
                     PromiseOrValue::Value(U128(0))
                 },
-                UserAction::Vote {
-                    index,
-                    vote
-                } => {
-                    self.assert_index(index);
-                    self.assert_status(index);
-
-                    self.internal_vote(index, AccountInfo(vote, amount.into()), sender_id.to_string());
-                    PromiseOrValue::Value(U128(0))
-                }
+                _ => {}
             }
         }
     }

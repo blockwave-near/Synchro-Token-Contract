@@ -1,5 +1,13 @@
 use crate::*;
 
+/// Interface for a voting contract.
+#[ext_contract(ext_voting)]
+pub trait VoteContract {
+    /// Method for validators to vote or withdraw the vote.
+    /// Votes for if `is_vote` is true, or withdraws the vote if `is_vote` is false.
+    fn vote(&mut self, is_vote: bool);
+}
+
 /// Interface for bNear contract.
 #[ext_contract(ext_fungible_token)]
 pub trait FungibleToken {

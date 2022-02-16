@@ -29,10 +29,22 @@ impl VotingContract {
     }
 
     // Method for validators to vote.
-    pub fn internal_vote(&mut self, index: u32, vote: bool, vote_amount: Balance, account_id: AccountId) {
-        self.ping(vote_amount, index);
+    pub fn internal_vote(&mut self, index: u32, account_info: AccountInfo, account_id: AccountId) {
         let mut cur_poll: Poll = self.polls[index];
-        cur_poll.votes.insert(account_id, AccountInfo(vote, vote_amount));
+        let vote = account_info.vote;
+        let amount = account_info.amount;
+        let mut user_amount = amount.clone();
+
+        if account_info.vote {
+            cur_poll.yes_amount += amount;
+        } else {
+            cur_poll.no_amount += amount;
+        }
+
+        user_amount += amount;
+        cur_poll.stake_amount = account_info.amount;
+
+        cur_poll.votes.insert(account_id, AccountInfo(vote, user_amount));
         self.check_finish(index, &mut cur_poll);
     }
 
