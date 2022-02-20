@@ -81,7 +81,10 @@ impl VotingContract {
         let mut cur_poll: Poll = self.polls[index];
         let votes = std::mem::take(&mut cur_poll.votes);
         if votes.contains_key(&env::predecessor_account_id()) {
-            let amount = votes.get(&account_id).unwrap_or_else(|| { return U128(0) });
+            let account = votes.get(&account_id).unwrap();
+            let amount = (U256::from(cur_poll.stake_amount) * U256::from(account.amount) / U256::from(cur_poll.deposit_amount)).as_u128();
+
+            self.internal_send_tokens(&self.owner, &self.token_id, amount);
         } else {
             env::panic(b"ERR: non-whitelisted token can NOT deposit into lost-found.");
         };

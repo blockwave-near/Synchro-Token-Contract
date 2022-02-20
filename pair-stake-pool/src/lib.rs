@@ -77,19 +77,12 @@ impl Default for Account {
     }
 }
 
-/// The number of epochs required for the locked balance to become unlocked.
-/// NOTE: The actual number of epochs when the funds are unlocked is 3. But there is a corner case
-/// when the unstaking promise can arrive at the next epoch, while the inner state is already
-/// updated in the previous epoch. It will not unlock the funds for 4 epochs.
-const NUM_EPOCHS_TO_UNLOCK: EpochHeight = 4;
-
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize)]
 pub struct StakingContract {
     pub owner_id: AccountId,
     pub stake_public_key: PublicKey,
     pub last_epoch_height: EpochHeight,
-    pub last_total_balance: Balance,
     pub total_staked_balance: Balance,
     pub reward_fee_fraction: RewardFeeFraction,
     pub accounts: UnorderedMap<AccountId, Account>,
@@ -144,7 +137,6 @@ impl StakingContract {
             owner_id,
             stake_public_key: stake_public_key.into(),
             last_epoch_height: env::epoch_height(),
-            last_total_balance: 0,
             total_staked_balance: 0,
             reward_fee_fraction,
             accounts: UnorderedMap::new(b"u".to_vec()),

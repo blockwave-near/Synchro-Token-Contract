@@ -1,4 +1,5 @@
 use near_sdk::Gas;
+use uint::construct_uint;
 use crate::*;
 
 pub const MIN_SEED_DEPOSIT: u128 = 1_000_000_000_000_000_000;
@@ -11,6 +12,10 @@ pub const GAS_FOR_RESOLVE_TRANSFER: Gas = 10_000_000_000_000;
 pub const GAS_FOR_RESOLVE_WITHDRAW_SEED: Gas = 80_000_000_000_000;
 
 pub const INITIAL_MIN_CREATE_POLL: Balance = 100_000_000_000_000_000_000_000_000;
+
+construct_uint! {
+    pub struct U256(4);
+}
 
 /// TODO: this should be in the near_standard_contracts
 #[ext_contract(ext_fungible_token)]

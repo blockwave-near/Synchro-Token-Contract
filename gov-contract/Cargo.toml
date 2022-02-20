@@ -7,6 +7,7 @@ edition = "2018"
 
 [dependencies]
 near-sdk = "3.1.0"
+u-int = { version = "0.8.3", default-features = false }
 near-contract-standards = "3.1.1"
 
 [dev-dependencies]

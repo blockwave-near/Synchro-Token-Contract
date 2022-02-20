@@ -28,5 +28,5 @@ members = [
   "synchro-token",
   "test-contract-defi",
   "gov-contract",
-  "stake-pool",
+    "pair-stake-pool",
 ]
