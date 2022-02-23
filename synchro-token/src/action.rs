@@ -26,7 +26,7 @@ impl Contract {
         self.locked_token_amount -= unlocked;
         assert!(self.ft.total_supply >= 10u128.pow(18), "ERR_KEEP_AT_LEAST_ONE_SYNCHRO");
 
-        log!("Withdraw {} NEAR from {}", amount, account_id);
+        log!("Withdraw {} Sync from {}", amount, account_id);
 
         ext_fungible_token::ft_transfer(
             account_id.clone(),
